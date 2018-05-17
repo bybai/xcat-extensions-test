@@ -38,7 +38,20 @@ def vip_check(vip):
 def configure_vip(vip, nic, mask):
     """configure virtual ip"""
     log_info("Start configure virtual ip as alias ip")
-    
+    cmd="ifconfig "+nic+" "+vip+" "+" netmask "+mask
+    res=os.system(cmd)
+    if res is 0:
+        message="configure virtual IP [passed]."
+        log_info(message)
+    else :
+        message="Error: configure virtual IP [failed]."
+        log_info(message) 
+        exit(1)
+    #add virtual ip into /etc/resolve.conf
+    resolvefile=open('/etc/resolve.conf','a')
+    name_server="nameserver "+vip
+    resolvefile.write(name_server)
+    resolvefile.close()
 
 def main():
     args=parser_arguments()
