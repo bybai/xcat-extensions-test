@@ -22,9 +22,36 @@ class xcat_ha_utils:
             message="Error: Aborted startup as virtual ip appears to be already active."
             log_info(message)
             exit(1)
-        else :
+        else:
             message="virtual ip can be used."
             log_info(message) 
+
+    def execute_service(self, cmd):
+        """"""
+        loginfo="Running command:"+cmd
+        print loginfo
+        a=0
+        while True:
+            if a==3:
+                loginfo=cmd+" [Failed]"
+                print loginfo
+                return 1
+            else a >0:
+                sleep 3
+                loginfo="Retry "+a+" ... ..."+cmd
+                print loginfo
+                res=os.system(cmd)
+                if res is 0:
+                    loginfo=cmd+" [Passed]"
+                    return 0
+                else:
+                    a += 1
+
+    def configure_xcat_attribute(self, host, ip):
+        "configure xcat MN attribute"
+        log_info("Configure xCAT management node attribute")
+        
+
         
     def configure_vip(self, vip, nic, mask):
         """configure virtual ip"""
@@ -43,6 +70,14 @@ class xcat_ha_utils:
         name_server="nameserver "+vip
         resolvefile.write(name_server)
         resolvefile.close()
+ 
+    def change_hostname(self, host, ip):
+        """change hostname"""
+        log_info("Start configure hostname")
+        hostfile=open('/etc/hosts','a')
+        ip_and_host=ip+" "+host
+        hostfile.write(ip_and_host)
+        hostfile.close()
 
     def unconfigure_vip(self, vip, nic):
         """remove vip from nic and /etc/resolve.conf"""
@@ -60,10 +95,17 @@ class xcat_ha_utils:
             message="Error: fail to remove virtual IP [failed]."
             log_info(message)
             exit(1)
+
+    def check_service_status(service_name):
+        """check service status"""
+        status = os.system('systemctl status '+service_name+ ' > /dev/null')
+        return status
+
         
-    def check_xcat_attribute(self, vip)
+    def check_xcat_attribute(self, vip):
         """check master and nameservers in site table, tftpserver in networks table"""
         pass      
+
 
     def copy_files(sourceDir, targetDir):  
         print sourceDir  
