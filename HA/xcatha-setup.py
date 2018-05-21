@@ -8,10 +8,6 @@ import os
 import time
 import pdb
 
-def log_info(message):
-    print "================================================================="
-    print message
-
 class xcat_ha_utils:
 
     def log_info(self, message):
