@@ -6,6 +6,7 @@
 import argparse
 import os
 import time
+from subprocess import Popen, PIPE
 import pdb
 
 class xcat_ha_utils:
@@ -51,7 +52,26 @@ class xcat_ha_utils:
     def configure_xcat_attribute(self, host, ip):
         "configure xcat MN attribute"
         self.log_info("Configure xCAT management node attribute")
+
+    def check_database_type(self, dbtype):
+        """if current xcat DB type (lsxcatd -d) is different from target type, switch DB to target type"""
+        self.log_info("Check database type ...")
+        f=Popen(('lsxcatd', '-d'), stdout=PIPE).stdout
+        data=[eachLine.strip() for eachLine in f]
+        current_dbtype=filter(lambda x : 'dbengine=' in x, data)[0]
+        target_dbtype="dbengine=dbtype"
+        if current_dbtype != target_dbtype:
+            self.switch_database(self, dbtype)
         
+    def switch_database(self, dbtype):
+        """switch database to target type"""
+        pass
+   
+    def install_db_package(self, dbtype):
+        """install database package"""
+        pass        
+
+            
     def configure_vip(self, vip, nic, mask):
         """configure virtual ip"""
         self.log_info("Start configure virtual ip as alias ip")
