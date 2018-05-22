@@ -6,8 +6,12 @@
 import argparse
 import os
 import time
+import platform
 from subprocess import Popen, PIPE
 import pdb
+
+xcat_url="https://raw.githubusercontent.com/xcat2/xcat-core/master/xCAT-server/share/xcat/tools/go-xcat"
+shared_fs=['/install','/etc/xcat','/root/.xcat','/var/lib/pgsql']
 
 class xcat_ha_utils:
 
@@ -62,15 +66,82 @@ class xcat_ha_utils:
         target_dbtype="dbengine=dbtype"
         if current_dbtype != target_dbtype:
             self.switch_database(self, dbtype)
+
+    def check_shared_data_db_type(self, dbtype, path):
+        """check if target dbtype is the same with shared data dbtype"""
+        self.log_info("Check if target dbtype is the same with shared data dbtype")
+        cfgfile=path+"/etc/xcat/cfgloc"
+        if os.path.exists(cfgfile):
+            with open(r'/etc/xcat/cfgloc') as file:
+                sdbtype=file.read(2)
+            file.close()
+            if sdbtype == 'my':
+                share_data_db="mysql"
+            else:
+                share_data_db="postgresql"
+        else:
+            share_data_db="sqlite"
+        print "database type is "+share_data_db+" in shared data directory"
+        if share_data_db == tdbtype:
+            print "target database type is matched [Passed]"
+        else:
+            print "Error: target database is not matched [Failed]"
+            exit(1)
         
     def switch_database(self, dbtype):
         """switch database to target type"""
-        pass
-   
+        res=self.install_db_package(dbtype)
+        if res is 0:
+            self.log_info("Switch to target database")
+            if dbtype == "postgresql":
+                cmd="pgsqlsetup -i -V"
+                res=os.system(cmd)
+                if res is 0:
+                    print "Switch to "+dbtype+" [Passed]"
+                else:
+                    print "Switch to "+dbtype+" [Failed]"
+            else:
+                print "Do not support"+dbtype+" [Failed]"  
+
+ 
     def install_db_package(self, dbtype):
         """install database package"""
-        pass        
+        self.log_info("Install database package ...")
+        os_name=platform.platform()
+        if os_name.__contains__("redhat") and dbtype== "postgresql":  
+            cmd="yum -y install postgresql* perl-DBD-Pg"
+            print "yum -y install postgresql* perl-DBD-Pg"
+            res=os.system(cmd)
+            if res is not 0:
+                print "install postgresql* perl-DBD-Pg  package [Failed]"
+            else:
+                print "install postgresql* perl-DBD-Pg  package [Passed]"     
+            return res
 
+    def install_xcat(self, url):
+        """install stable xCAT"""
+        cmd="wget "+url+" -O - >/tmp/go-xcat"
+        res=os.system(cmd)
+        if res is 0:
+            cmd="chmod +x /tmp/go-xcat"
+            res=os.system(cmd)
+            if res is 0:
+                cmd="/tmp/go-xcat --yes install"
+                res=os.system(cmd)
+                if res is 0:
+                    print "xCAT is installed [Passed]"
+                    xcat_env="/opt/xcat/bin:/opt/xcat/sbin:/opt/xcat/share/xcat/tools:"
+                    os.environ["PATH"]=xcat_env+os.environ["PATH"]
+                    cmd="lsxcatd -v"
+                    os.system(cmd)
+                    return True
+                else:
+                    print "xCAT is installed [Failed]"
+            else:
+                print "chmod [Failed]"
+        else:
+            print "wget [Failed]"
+        return False
             
     def configure_vip(self, vip, nic, mask):
         """configure virtual ip"""
@@ -115,12 +186,12 @@ class xcat_ha_utils:
             self.log_info(message)
             exit(1)
 
-    def check_service_status(service_name):
+    def check_service_status(self, service_name):
         """check service status"""
         status = os.system('systemctl status '+service_name+ ' > /dev/null')
         return status
 
-    def finditem(n,server):
+    def finditem(self, n, server):
         """add item into policy table"""
         index=bytes(n)
         cmd="lsdef -t policy |grep 1."+index
@@ -165,7 +236,7 @@ class xcat_ha_utils:
             loginfo="Error: get server name "+server+" failed." 
         return 1       
 
-    def copy_files(sourceDir, targetDir):  
+    def copy_files(self, sourceDir, targetDir):  
         print sourceDir  
         for f in os.listdir(sourceDir):  
             sourceF = os.path.join(sourceDir, f)  
@@ -199,14 +270,31 @@ class xcat_ha_utils:
                 while i < len(sharedfs):
                     xcat_file_path=path+sharedfs[i]
                     os.mkdir(xcat_file_path)
-                    copy_files(sharedfs[i],xcat_file_path)
+                    self.copy_files(sharedfs[i],xcat_file_path)
                     i += 1  
         #create symlink 
         i=0
         while i < len(sharedfs):
             print "create symlink ..."
             xcat_file_path=path+sharedfs[i]
-            os.symlink(xcat_file_path, sharedfs[i]) 
+            os.symlink(xcat_file_path, sharedfs[i])     
+    
+    def xcatha_setup_mn(self, args):
+        """main process"""
+        self.vip_check(args.v)
+        self.check_shared_data_db_type(args.dbtype)
+        self.configure_vip(args.v,args.i,args.netmask)
+        self.change_hostname(args.hname,args.v)
+        if self.check_service_status("xcatd") is not 0:
+            install_xcat(xcat_url)
+        self.check_database_type(args.dbtype)
+        self.configure_shared_data(args.p, shared_fs)
+        if self.check_service_status("xcatd") is not 0:
+            print "Error: xCAT service does not work well [Failed]"
+            exit(1)
+        else:
+            print "xCAT service works well [Passed]"
+        self.change_xcat_policy_attribute(args.i, args.v)
 
 def parser_arguments():
     """parser input arguments"""
@@ -223,7 +311,7 @@ def parser_arguments():
 def main():
     args=parser_arguments()
     obj=xcat_ha_utils()
-    obj.vip_check(args.v)
+    obj.xcatha_setup_mn(args)
 
 if __name__ == "__main__":
     main()
