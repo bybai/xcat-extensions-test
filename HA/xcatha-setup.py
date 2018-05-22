@@ -7,11 +7,12 @@ import argparse
 import os
 import time
 import platform
+import shutil
 from subprocess import Popen, PIPE
 import pdb
 
 xcat_url="https://raw.githubusercontent.com/xcat2/xcat-core/master/xCAT-server/share/xcat/tools/go-xcat"
-shared_fs=['/install','/etc/xcat','/root/.xcat','/var/lib/pgsql']
+shared_fs=['/install','/etc/xcat','/root/.xcat','/var/lib/pgsql','/tftpboot']
 
 class xcat_ha_utils:
 
@@ -65,22 +66,24 @@ class xcat_ha_utils:
         current_dbtype=filter(lambda x : 'dbengine=' in x, data)[0]
         target_dbtype="dbengine=dbtype"
         if current_dbtype != target_dbtype:
-            self.switch_database(self, dbtype)
+            self.switch_database(dbtype)
 
-    def check_shared_data_db_type(self, dbtype, path):
+    def check_shared_data_db_type(self, tdbtype, path):
         """check if target dbtype is the same with shared data dbtype"""
         self.log_info("Check if target dbtype is the same with shared data dbtype")
         cfgfile=path+"/etc/xcat/cfgloc"
+        share_data_db=""
         if os.path.exists(cfgfile):
-            with open(r'/etc/xcat/cfgloc') as file:
+            with open(cfgfile,'r') as file:
                 sdbtype=file.read(2)
             file.close()
             if sdbtype == 'my':
                 share_data_db="mysql"
-            else:
+            elif sdbtype == 'Pg':
                 share_data_db="postgresql"
         else:
-            share_data_db="sqlite"
+            print "There is no database in shared data directory [Passed]"
+            return 0
         print "database type is "+share_data_db+" in shared data directory"
         if share_data_db == tdbtype:
             print "target database type is matched [Passed]"
@@ -147,19 +150,24 @@ class xcat_ha_utils:
         """configure virtual ip"""
         self.log_info("Start configure virtual ip as alias ip")
         cmd="ifconfig "+nic+" "+vip+" "+" netmask "+mask
+        print cmd
         res=os.system(cmd)
         if res is 0:
             message="configure virtual IP [passed]."
-            self.log_info(message)
+            print message
         else :
             message="Error: configure virtual IP [failed]."
-            self.log_info(message) 
+            print message 
             exit(1)
         #add virtual ip into /etc/resolve.conf
-        resolvefile=open('/etc/resolve.conf','a')
+        msg="add virtual ip"+vip+" into /etc/resolve.conf"
+        self.log_info(msg)
+        resolvefile=open('/etc/resolv.conf','a')
         name_server="nameserver "+vip
+        print name_server
         resolvefile.write(name_server)
         resolvefile.close()
+
  
     def change_hostname(self, host, ip):
         """change hostname"""
@@ -168,6 +176,13 @@ class xcat_ha_utils:
         ip_and_host=ip+" "+host
         hostfile.write(ip_and_host)
         hostfile.close()
+        cmd="hostname "+host
+        res=os.system(cmd)
+        if res is 0:
+            print cmd+" [Passed]"
+        else:
+            print cmd+" [Failed]"
+
 
     def unconfigure_vip(self, vip, nic):
         """remove vip from nic and /etc/resolve.conf"""
@@ -197,7 +212,7 @@ class xcat_ha_utils:
         cmd="lsdef -t policy |grep 1."+index
         res=os.system(cmd)
         if res is not 0:
-            cmd="chdef -t policy 1."+n+" name="+server+" rule=trusted"
+            cmd="chdef -t policy 1."+index+" name="+server+" rule=trusted"
             res=os.system(cmd)
             if res is 0:
                 loginfo=cmd+" [Passed]"
@@ -226,7 +241,7 @@ class xcat_ha_utils:
             cmd="lsdef -t policy -i name|grep "+server
             res=os.system(cmd)
             if res is not 0:
-                res=finditem(3,server)
+                res=self.finditem(3,server)
                 if res is 0:
                     return 0
             else:
@@ -255,7 +270,7 @@ class xcat_ha_utils:
                 else:  
                     print u"%s %s existed, do not copy it" %(time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())), targetF)  
             if os.path.isdir(sourceF):  
-                copy_files(sourceF, targetF)
+                self.copy_files(sourceF, targetF)
 
 
     def configure_shared_data(self, path, sharedfs):
@@ -264,29 +279,34 @@ class xcat_ha_utils:
         #check if there is xcat data in shared data directory
         xcat_file_path=path+"/etc/xcat"
         if not os.path.exists(xcat_file_path):
-            permision=oct(os.stat(xcat_file_path).st_mode)[-3:]           
+            permision=oct(os.stat(path).st_mode)[-3:]           
             if permision == '755':
                 i = 0
                 while i < len(sharedfs):
                     xcat_file_path=path+sharedfs[i]
-                    os.mkdir(xcat_file_path)
+                    if not os.path.exists(xcat_file_path):
+                        os.makedirs(xcat_file_path)
                     self.copy_files(sharedfs[i],xcat_file_path)
                     i += 1  
         #create symlink 
         i=0
         while i < len(sharedfs):
-            print "create symlink ..."
+            print "create symlink ..."+sharedfs[i]
             xcat_file_path=path+sharedfs[i]
-            os.symlink(xcat_file_path, sharedfs[i])     
-    
+            if not os.path.islink(sharedfs[i]):
+                if os.path.exists(sharedfs[i]):
+                    shutil.move(sharedfs[i], sharedfs[i]+".xcatbak")
+                os.symlink(xcat_file_path, sharedfs[i])     
+            i += 1
+ 
     def xcatha_setup_mn(self, args):
         """main process"""
         self.vip_check(args.v)
-        self.check_shared_data_db_type(args.dbtype)
+        self.check_shared_data_db_type(args.dbtype,args.p)
         self.configure_vip(args.v,args.i,args.netmask)
         self.change_hostname(args.hname,args.v)
         if self.check_service_status("xcatd") is not 0:
-            install_xcat(xcat_url)
+            self.install_xcat(xcat_url)
         self.check_database_type(args.dbtype)
         self.configure_shared_data(args.p, shared_fs)
         if self.check_service_status("xcatd") is not 0:
