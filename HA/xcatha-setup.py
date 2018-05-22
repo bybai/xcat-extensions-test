@@ -30,8 +30,8 @@ class xcat_ha_utils:
             self.log_info(message)
             exit(1)
         else:
-            message="virtual ip can be used."
-            self.log_info(message) 
+            message="virtual ip can be used [Passed]"
+            print message
 
     def execute_command(self, cmd):
         """"""
@@ -64,6 +64,8 @@ class xcat_ha_utils:
         f=Popen(('lsxcatd', '-d'), stdout=PIPE).stdout
         data=[eachLine.strip() for eachLine in f]
         current_dbtype=filter(lambda x : 'dbengine=' in x, data)[0]
+        print "current xCAT database type: "+current_dbtype
+        print "target xCAT database type: "+dbtype
         target_dbtype="dbengine=dbtype"
         if current_dbtype != target_dbtype:
             self.switch_database(dbtype)
@@ -84,7 +86,7 @@ class xcat_ha_utils:
         else:
             print "There is no database in shared data directory [Passed]"
             return 0
-        print "database type is "+share_data_db+" in shared data directory"
+        print "database type is '"+share_data_db+"' in shared data directory"
         if share_data_db == tdbtype:
             print "target database type is matched [Passed]"
         else:
@@ -160,7 +162,7 @@ class xcat_ha_utils:
             print message 
             exit(1)
         #add virtual ip into /etc/resolve.conf
-        msg="add virtual ip"+vip+" into /etc/resolve.conf"
+        msg="add virtual ip "+vip+" into /etc/resolve.conf"
         self.log_info(msg)
         resolvefile=open('/etc/resolv.conf','a')
         name_server="nameserver "+vip
