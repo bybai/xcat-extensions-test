@@ -13,18 +13,26 @@ import pdb
 
 xcat_url="https://raw.githubusercontent.com/xcat2/xcat-core/master/xCAT-server/share/xcat/tools/go-xcat"
 shared_fs=['/install','/etc/xcat','/root/.xcat','/var/lib/pgsql','/tftpboot']
+xcat_cfgloc="/etc/xcat/cfgloc"
+xcat_install="/tmp/go-xcat --yes install"
 
 class xcat_ha_utils:
 
     def log_info(self, message):
-        print "================================================================="
+        print "============================================================================================"
         print message
+
+    def runcmd(self, cmd):
+        """print and execute command"""
+        print cmd
+        res=os.system(cmd)
+        return res
 
     def vip_check(self, vip):
         """check if virtual ip can ping or not"""
         self.log_info("ping virtual ip ... ...")
         pingcmd="ping -c 1 -w 10 "+vip
-        res=os.system(pingcmd)
+        res=self.runcmd(pingcmd)
         if res is 0:
             message="Error: Aborted startup as virtual ip appears to be already active."
             self.log_info(message)
@@ -34,7 +42,7 @@ class xcat_ha_utils:
             print message
 
     def execute_command(self, cmd):
-        """"""
+        """execute and retry execute command"""
         loginfo="Running command:"+cmd
         print loginfo
         a=0
@@ -54,9 +62,11 @@ class xcat_ha_utils:
                 else:
                     a += 1
 
+
     def configure_xcat_attribute(self, host, ip):
         "configure xcat MN attribute"
         self.log_info("Configure xCAT management node attribute")
+        pass
 
     def check_database_type(self, dbtype):
         """if current xcat DB type (lsxcatd -d) is different from target type, switch DB to target type"""
@@ -73,7 +83,7 @@ class xcat_ha_utils:
     def check_shared_data_db_type(self, tdbtype, path):
         """check if target dbtype is the same with shared data dbtype"""
         self.log_info("Check if target dbtype is the same with shared data dbtype")
-        cfgfile=path+"/etc/xcat/cfgloc"
+        cfgfile=path+xcat_cfgloc
         share_data_db=""
         if os.path.exists(cfgfile):
             with open(cfgfile,'r') as file:
@@ -100,7 +110,7 @@ class xcat_ha_utils:
             self.log_info("Switch to target database")
             if dbtype == "postgresql":
                 cmd="pgsqlsetup -i -V"
-                res=os.system(cmd)
+                res=self.runcmd(cmd)
                 if res is 0:
                     print "Switch to "+dbtype+" [Passed]"
                 else:
@@ -115,8 +125,7 @@ class xcat_ha_utils:
         os_name=platform.platform()
         if os_name.__contains__("redhat") and dbtype== "postgresql":  
             cmd="yum -y install postgresql* perl-DBD-Pg"
-            print "yum -y install postgresql* perl-DBD-Pg"
-            res=os.system(cmd)
+            res=self.runcmd(cmd)
             if res is not 0:
                 print "install postgresql* perl-DBD-Pg  package [Failed]"
             else:
@@ -126,19 +135,19 @@ class xcat_ha_utils:
     def install_xcat(self, url):
         """install stable xCAT"""
         cmd="wget "+url+" -O - >/tmp/go-xcat"
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         if res is 0:
             cmd="chmod +x /tmp/go-xcat"
-            res=os.system(cmd)
+            res=self.runcmd(cmd)
             if res is 0:
-                cmd="/tmp/go-xcat --yes install"
-                res=os.system(cmd)
+                cmd=xcat_install
+                res=self.runcmd(cmd)
                 if res is 0:
                     print "xCAT is installed [Passed]"
                     xcat_env="/opt/xcat/bin:/opt/xcat/sbin:/opt/xcat/share/xcat/tools:"
                     os.environ["PATH"]=xcat_env+os.environ["PATH"]
                     cmd="lsxcatd -v"
-                    os.system(cmd)
+                    self.runcmd(cmd)
                     return True
                 else:
                     print "xCAT is installed [Failed]"
@@ -153,7 +162,7 @@ class xcat_ha_utils:
         self.log_info("Start configure virtual ip as alias ip")
         cmd="ifconfig "+nic+" "+vip+" "+" netmask "+mask
         print cmd
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         if res is 0:
             message="configure virtual IP [passed]."
             print message
@@ -162,24 +171,38 @@ class xcat_ha_utils:
             print message 
             exit(1)
         #add virtual ip into /etc/resolve.conf
-        msg="add virtual ip "+vip+" into /etc/resolve.conf"
+        msg="add virtual ip "+vip+" into /etc/resolv.conf"
         self.log_info(msg)
-        resolvefile=open('/etc/resolv.conf','a')
         name_server="nameserver "+vip
-        print name_server
-        resolvefile.write(name_server)
-        resolvefile.close()
+        resolv_file="/etc/resolv.conf"
+        res=find_line(resolv_file, name_server)
+        if not True:
+            resolvefile=open(resolv_file,'a')
+            print name_server
+            resolvefile.write(name_server)
+            resolvefile.close()
 
+    def find_line(self, filename, keyword):
+        """find keyword from file"""
+        with open(filename,'r')as fp:
+            for line in fp:
+                if keyword in line:
+                    return True
+                else:
+                    return False
  
     def change_hostname(self, host, ip):
         """change hostname"""
         self.log_info("Start configure hostname")
-        hostfile=open('/etc/hosts','a')
         ip_and_host=ip+" "+host
-        hostfile.write(ip_and_host)
-        hostfile.close()
+        hostfile="/etc/hosts"
+        res=self.find_line(hostfile, ip_and_host)
+        if not True:
+            hostfile=open(hostfile,'a')
+            hostfile.write(ip_and_host)
+            hostfile.close()
         cmd="hostname "+host
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         if res is 0:
             print cmd+" [Passed]"
         else:
@@ -190,38 +213,35 @@ class xcat_ha_utils:
         """remove vip from nic and /etc/resolve.conf"""
         self.log_info("remove virtual ip")
         cmd="ifconfig "+nic+" 0.0.0.0 0.0.0.0"
-        print cmd
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         cmd="ip addr show |grep "+vip+" &>/dev/null"
-        print cmd
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         if res is 0:
-            message="remove virtual IP [passed]."
-            self.log_info(message)
+            print "remove virtual IP [passed]."
         else :
-            message="Error: fail to remove virtual IP [failed]."
-            self.log_info(message)
+            print "Error: fail to remove virtual IP [failed]."
             exit(1)
 
     def check_service_status(self, service_name):
         """check service status"""
-        status = os.system('systemctl status '+service_name+ ' > /dev/null')
+        status =self.runcmd('systemctl status '+service_name+ ' > /dev/null')
         return status
 
     def finditem(self, n, server):
         """add item into policy table"""
         index=bytes(n)
         cmd="lsdef -t policy |grep 1."+index
-        res=os.system(cmd)
+        res=self.runcmd(cmd)
         if res is not 0:
             cmd="chdef -t policy 1."+index+" name="+server+" rule=trusted"
-            res=os.system(cmd)
+            res=self.runcmd(cmd)
             if res is 0:
-                loginfo=cmd+" [Passed]"
+                loginfo="'"+cmd+"' [Passed]"
                 print loginfo
                 return 0
             else:
-                loginfo=cmd+" [Failed]"
+                loginfo="'"+cmd+"' [Failed]"
+                print loginfo
                 return 1
         else:
             n+=1
@@ -241,7 +261,7 @@ class xcat_ha_utils:
                     break
         if server:
             cmd="lsdef -t policy -i name|grep "+server
-            res=os.system(cmd)
+            res=self.runcmd(cmd)
             if res is not 0:
                 res=self.finditem(3,server)
                 if res is 0:
@@ -306,7 +326,7 @@ class xcat_ha_utils:
         self.vip_check(args.v)
         self.check_shared_data_db_type(args.dbtype,args.p)
         self.configure_vip(args.v,args.i,args.netmask)
-        self.change_hostname(args.hname,args.v)
+        self.change_hostname(args.n,args.v)
         if self.check_service_status("xcatd") is not 0:
             self.install_xcat(xcat_url)
         self.check_database_type(args.dbtype)
@@ -324,8 +344,8 @@ def parser_arguments():
     parser.add_argument('-p', required=True, help="shared data directory path")
     parser.add_argument('-v', required=True, help="virtual IP")
     parser.add_argument('-i', required=True, help="virtual IP network interface")
+    parser.add_argument('-n', required=True, dest="hname", help="virtual IP hostname")
     parser.add_argument('-m', dest="netmask", default="255.255.255.0", help="virtual IP network mask")
-    parser.add_argument('-n', dest="hname", help="virtual IP hostname")
     parser.add_argument('-t', dest="dbtype", default="sqlite", help="database type")
     args = parser.parse_args()
     return args
