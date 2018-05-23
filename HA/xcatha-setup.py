@@ -1,7 +1,23 @@
 #!/usr/bin/env python
+###############################################################################
+# IBM(c) 2018 EPL license http://www.eclipse.org/legal/epl-v10.html
+###############################################################################
+# -*- coding: utf-8 -*-
+#  CHANGE HISTORY:
+#   
+#  NAME:  xcatha-setup.py
 #
-#  xcatha-setup.py -p <shared-data directory path> -i <nic> -v <virtual ip> [-m <netmask>] [-t <database type>] 
+#  SYNTAX: xcatha-setup.py -p <shared-data directory path> -i <nic> -v <virtual ip> [-m <netmask>] [-t <database type>] 
 #
+#  DESCRIPTION:  Setup this node be the shared data based xCAT MN
+#
+#  FLAGS:
+#               -p      the shared data directory path
+#               -i      the nic that the virtual ip address attaches to,
+#                       for Linux, it could be eth0:1 or eth1:2 or ...
+#               -v      virtual ip address
+#               -m      netmask for the virtual ip address,
+#                       default to 255.255.255.0
 
 import argparse
 import os
@@ -15,6 +31,13 @@ xcat_url="https://raw.githubusercontent.com/xcat2/xcat-core/master/xCAT-server/s
 shared_fs=['/install','/etc/xcat','/root/.xcat','/var/lib/pgsql','/tftpboot']
 xcat_cfgloc="/etc/xcat/cfgloc"
 xcat_install="/tmp/go-xcat --yes install"
+xcatdb_password="XCATPGPW=cluster"
+setup_process_msg=""
+
+class HaException(Exception):
+    def __init__(self,message):
+        Exception.__init__(self)
+        self.message=message
 
 class xcat_ha_utils:
 
@@ -30,7 +53,9 @@ class xcat_ha_utils:
 
     def vip_check(self, vip):
         """check if virtual ip can ping or not"""
-        self.log_info("ping virtual ip ... ...")
+        global setup_process_msg
+        setup_process_msg="Check virtual ip stage"
+        self.log_info(setup_process_msg)
         pingcmd="ping -c 1 -w 10 "+vip
         res=self.runcmd(pingcmd)
         if res is 0:
@@ -68,21 +93,54 @@ class xcat_ha_utils:
         self.log_info("Configure xCAT management node attribute")
         pass
 
+    def current_database_type(self, path):
+        """current data base type"""
+        cfgloc=path+xcat_cfgloc
+        if os.path.exists(cfgloc):
+            with open(cfgloc, 'r') as file:
+                cdbtype=file.read(2)
+            file.close()
+            if cdbtype == 'my':
+                current_data_db="mysql"
+            else:
+                current_data_db="postgresql"
+        else:
+            current_data_db="sqlite"
+        return current_data_db
+
     def check_database_type(self, dbtype):
-        """if current xcat DB type (lsxcatd -d) is different from target type, switch DB to target type"""
-        self.log_info("Check database type ...")
-        f=Popen(('lsxcatd', '-d'), stdout=PIPE).stdout
-        data=[eachLine.strip() for eachLine in f]
-        current_dbtype=filter(lambda x : 'dbengine=' in x, data)[0]
+        """if current xcat DB type is different from target type, switch DB to target type"""
+        global setup_process_msg
+        setup_process_msg="Check database type stage"
+        self.log_info(setup_process_msg)
+        #f=Popen(('lsxcatd', '-d'), stdout=PIPE).stdout
+        #data=[eachLine.strip() for eachLine in f]
+        #current_dbtype=filter(lambda x : 'dbengine=' in x, data)[0]
+        current_dbtype=self.current_database_type("")
         print "current xCAT database type: "+current_dbtype
         print "target xCAT database type: "+dbtype
         target_dbtype="dbengine=dbtype"
         if current_dbtype != target_dbtype:
             self.switch_database(dbtype)
 
+    def check_xcat_exist_in_shared_data(self, path):
+        """check if xcat data is in shared data directory"""
+        global setup_process_msg
+        setup_process_msg="check if xcat data is in shared data directory"
+        self.log_info(setup_process_msg)
+        xcat_path=path+"/install"
+        if os.path.exists(xcat_path):
+            print "There is xCAT data "+xcat_path+" in shared data "+path
+            return True
+        else:
+            print "There is no xCAT data "+xcat_path+" in shared data "+path
+            return False
+
     def check_shared_data_db_type(self, tdbtype, path):
         """check if target dbtype is the same with shared data dbtype"""
-        self.log_info("Check if target dbtype is the same with shared data dbtype")
+        global setup_process_msg
+        setup_process_msg="Check if target dbtype is the same with shared data dbtype stage"
+        self.log_info(setup_process_msg)
         cfgfile=path+xcat_cfgloc
         share_data_db=""
         if os.path.exists(cfgfile):
@@ -94,8 +152,7 @@ class xcat_ha_utils:
             elif sdbtype == 'Pg':
                 share_data_db="postgresql"
         else:
-            print "There is no database in shared data directory [Passed]"
-            return 0
+            share_data_db="sqlite"
         print "database type is '"+share_data_db+"' in shared data directory"
         if share_data_db == tdbtype:
             print "target database type is matched [Passed]"
@@ -105,11 +162,14 @@ class xcat_ha_utils:
         
     def switch_database(self, dbtype):
         """switch database to target type"""
+        global setup_process_msg
         res=self.install_db_package(dbtype)
         if res is 0:
-            self.log_info("Switch to target database")
+            setup_process_msg="Switch to target database stage"
+            self.log_info(setup_process_msg)
             if dbtype == "postgresql":
-                cmd="pgsqlsetup -i -V"
+                #cmd="export "+xcatdb_password+";pgsqlsetup -i -V"
+                cmd="pgsqlsetup -i"
                 res=self.runcmd(cmd)
                 if res is 0:
                     print "Switch to "+dbtype+" [Passed]"
@@ -117,10 +177,11 @@ class xcat_ha_utils:
                     print "Switch to "+dbtype+" [Failed]"
             else:
                 print "Do not support"+dbtype+" [Failed]"  
-
  
     def install_db_package(self, dbtype):
         """install database package"""
+        global setup_process_msg
+        setup_process_msg="Install database package stage"
         self.log_info("Install database package ...")
         os_name=platform.platform()
         if os_name.__contains__("redhat") and dbtype== "postgresql":  
@@ -134,6 +195,9 @@ class xcat_ha_utils:
 
     def install_xcat(self, url):
         """install stable xCAT"""
+        global setup_process_msg
+        setup_process_msg="Install xCAT stage"
+        self.log_info(setup_process_msg)
         cmd="wget "+url+" -O - >/tmp/go-xcat"
         res=self.runcmd(cmd)
         if res is 0:
@@ -159,9 +223,10 @@ class xcat_ha_utils:
             
     def configure_vip(self, vip, nic, mask):
         """configure virtual ip"""
-        self.log_info("Start configure virtual ip as alias ip")
+        global setup_process_msg
+        setup_process_msg="Start configure virtual ip as alias ip stage"
+        self.log_info(setup_process_msg)
         cmd="ifconfig "+nic+" "+vip+" "+" netmask "+mask
-        print cmd
         res=self.runcmd(cmd)
         if res is 0:
             message="configure virtual IP [passed]."
@@ -175,8 +240,8 @@ class xcat_ha_utils:
         self.log_info(msg)
         name_server="nameserver "+vip
         resolv_file="/etc/resolv.conf"
-        res=find_line(resolv_file, name_server)
-        if not True:
+        res=self.find_line(resolv_file, name_server)
+        if res is False:
             resolvefile=open(resolv_file,'a')
             print name_server
             resolvefile.write(name_server)
@@ -185,19 +250,22 @@ class xcat_ha_utils:
     def find_line(self, filename, keyword):
         """find keyword from file"""
         with open(filename,'r')as fp:
-            for line in fp:
+            list1 = fp.readlines()
+            for line in list1:
+                line=line.rstrip('\n')
                 if keyword in line:
                     return True
-                else:
-                    return False
+        return False
  
     def change_hostname(self, host, ip):
         """change hostname"""
-        self.log_info("Start configure hostname")
+        global setup_process_msg
+        setup_process_msg="Start configure hostname stage"
+        self.log_info(setup_process_msg)
         ip_and_host=ip+" "+host
         hostfile="/etc/hosts"
         res=self.find_line(hostfile, ip_and_host)
-        if not True:
+        if res is False:
             hostfile=open(hostfile,'a')
             hostfile.write(ip_and_host)
             hostfile.close()
@@ -211,19 +279,24 @@ class xcat_ha_utils:
 
     def unconfigure_vip(self, vip, nic):
         """remove vip from nic and /etc/resolve.conf"""
-        self.log_info("remove virtual ip")
-        cmd="ifconfig "+nic+" 0.0.0.0 0.0.0.0"
+        global setup_process_msg
+        setup_process_msg="remove virtual ip"
+        self.log_info(setup_process_msg)
+        cmd="ifconfig "+nic+" 0.0.0.0 0.0.0.0 &>/dev/null"
         res=self.runcmd(cmd)
         cmd="ip addr show |grep "+vip+" &>/dev/null"
         res=self.runcmd(cmd)
         if res is 0:
-            print "remove virtual IP [passed]."
-        else :
-            print "Error: fail to remove virtual IP [failed]."
+            print "Error: fail to remove virtual IP"
             exit(1)
+        else:
+            print "Remove virtual IP [Passed]"
 
     def check_service_status(self, service_name):
         """check service status"""
+        global setup_process_msg
+        setup_process_msg="Check "+service_name+" service status"
+        self.log_info(setup_process_msg)
         status =self.runcmd('systemctl status '+service_name+ ' > /dev/null')
         return status
 
@@ -249,7 +322,9 @@ class xcat_ha_utils:
 
     def change_xcat_policy_attribute(self, nic, vip):
         """add hostname into policy table"""
-        self.log_info("Configure xCAT policy table")
+        global setup_process_msg
+        setup_process_msg="Configure xCAT policy table stage"
+        self.log_info(setup_process_msg)
         filename="/etc/xcat/cert/server-cert.pem"
         word="Subject: CN="
         server=""
@@ -297,7 +372,9 @@ class xcat_ha_utils:
 
     def configure_shared_data(self, path, sharedfs):
         """configure shared data directory"""
-        self.log_info("configure shared data directory")
+        global setup_process_msg
+        setup_process_msg="Configure shared data directory stage"
+        self.log_info(setup_process_msg)
         #check if there is xcat data in shared data directory
         xcat_file_path=path+"/etc/xcat"
         if not os.path.exists(xcat_file_path):
@@ -320,31 +397,39 @@ class xcat_ha_utils:
                     shutil.move(sharedfs[i], sharedfs[i]+".xcatbak")
                 os.symlink(xcat_file_path, sharedfs[i])     
             i += 1
+
+    def clean_env(self, vip, nic, host):
+        """clean up env when exception happen"""
+        self.unconfigure_vip(vip, nic)
  
     def xcatha_setup_mn(self, args):
         """main process"""
-        self.vip_check(args.v)
-        self.check_shared_data_db_type(args.dbtype,args.p)
-        self.configure_vip(args.v,args.i,args.netmask)
-        self.change_hostname(args.n,args.v)
-        if self.check_service_status("xcatd") is not 0:
-            self.install_xcat(xcat_url)
-        self.check_database_type(args.dbtype)
-        self.configure_shared_data(args.p, shared_fs)
-        if self.check_service_status("xcatd") is not 0:
-            print "Error: xCAT service does not work well [Failed]"
-            exit(1)
-        else:
-            print "xCAT service works well [Passed]"
-        self.change_xcat_policy_attribute(args.i, args.v)
+        try:
+            self.vip_check(args.virtual_ip)
+            if self.check_xcat_exist_in_shared_data(args.path):
+                self.check_shared_data_db_type(args.dbtype,args.path)
+            self.configure_vip(args.virtual_ip,args.nic,args.netmask)
+            self.change_hostname(args.host_name,args.virtual_ip)
+            if self.check_service_status("xcatd") is not 0:
+                self.install_xcat(xcat_url)
+            self.check_database_type(args.dbtype)
+            self.configure_shared_data(args.path, shared_fs)
+            if self.check_service_status("xcatd") is not 0:
+                print "Error: xCAT service does not work well [Failed]"
+                exit(1)
+            else:
+                print "xCAT service works well [Passed]"
+            self.change_xcat_policy_attribute(args.nic, args.virtual_ip)
+        except:
+            raise HaException("Error: "+setup_process_msg+" [Failed]")
 
 def parser_arguments():
     """parser input arguments"""
     parser = argparse.ArgumentParser(description="setup and configure shared data based xCAT HA MN node")
-    parser.add_argument('-p', required=True, help="shared data directory path")
-    parser.add_argument('-v', required=True, help="virtual IP")
-    parser.add_argument('-i', required=True, help="virtual IP network interface")
-    parser.add_argument('-n', required=True, dest="hname", help="virtual IP hostname")
+    parser.add_argument('-p', dest="path", required=True, help="shared data directory path")
+    parser.add_argument('-v', dest="virtual_ip", required=True, help="virtual IP")
+    parser.add_argument('-i', dest="nic", required=True, help="virtual IP network interface")
+    parser.add_argument('-n', dest="host_name", required=True, help="virtual IP hostname")
     parser.add_argument('-m', dest="netmask", default="255.255.255.0", help="virtual IP network mask")
     parser.add_argument('-t', dest="dbtype", default="sqlite", help="database type")
     args = parser.parse_args()
@@ -353,7 +438,13 @@ def parser_arguments():
 def main():
     args=parser_arguments()
     obj=xcat_ha_utils()
-    obj.xcatha_setup_mn(args)
+    try:
+        obj.xcatha_setup_mn(args)
+    except HaException,e:
+        error_msg="=================="+e.message+"=================================="
+        print error_msg        
+        print "Error happen, start to clean up environment"
+        obj.clean_env(args.virtual_ip, args.nic, args.host_name)
 
 if __name__ == "__main__":
     main()
