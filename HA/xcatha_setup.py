@@ -5,9 +5,15 @@
 # -*- coding: utf-8 -*-
 #  CHANGE HISTORY:
 #   
+<<<<<<< HEAD
 #  NAME:  xcatha-setup.py
 #
 #  SYNTAX: xcatha-setup.py -p <shared-data directory path> -i <nic> -v <virtual ip> [-m <netmask>] [-t <database type>] 
+=======
+#  NAME:  xcatha_setup.py
+#
+#  SYNTAX: xcatha_setup.py -p <shared-data directory path> -i <nic> -v <virtual ip> -n <virtual ip hostname> [-m <netmask>] [-t <database type>] 
+>>>>>>> upstream/master
 #
 #  DESCRIPTION:  Setup this node be the shared data based xCAT MN
 #
@@ -16,6 +22,10 @@
 #               -i      the nic that the virtual ip address attaches to,
 #                       for Linux, it could be eth0:1 or eth1:2 or ...
 #               -v      virtual ip address
+<<<<<<< HEAD
+=======
+#               -n      virtual ip hostname
+>>>>>>> upstream/master
 #               -m      netmask for the virtual ip address,
 #                       default to 255.255.255.0
 #               -t      target database type, it can be postgresql, default is sqlite
@@ -402,8 +412,28 @@ class xcat_ha_utils:
                 os.symlink(xcat_file_path, sharedfs[i])     
             i += 1
 
+<<<<<<< HEAD
     def clean_env(self, vip, nic, host):
         """clean up env when exception happen"""
+=======
+    def unconfigure_shared_data(self, sharedfs):
+        """unconfigure shared data directory"""
+        global setup_process_msg
+        setup_process_msg="Unconfigure shared data directory stage"
+        self.log_info(setup_process_msg)
+        #1.check if there is xcat data in shared data directory
+        #2.unlink data in shared data directory
+        i=0
+        while i < len(sharedfs):
+            print "remove symlink ..."+sharedfs[i]
+            if os.path.islink(sharedfs[i]):
+                os.unlink(xcat_file_path, sharedfs[i])     
+            i += 1
+
+    def clean_env(self, vip, nic, host):
+        """clean up env when exception happen"""
+        self.unconfigure_shared_data(shared_fs)
+>>>>>>> upstream/master
         self.unconfigure_vip(vip, nic)
 
     def deactivate_management_node(self, nic, vip, dbtype):
@@ -422,10 +452,38 @@ class xcat_ha_utils:
         stop_db="service "+dbtype+" stop"
         self.execute_command(stop_db)
         self.execute_command("service ntpd restart")
+<<<<<<< HEAD
         self.unconfigure_vip(vip, nic)
  
     def xcatha_setup_mn(self, args):
         """main process"""
+=======
+        self.unconfigure_shared_data(shared_fs)
+        self.unconfigure_vip(vip, nic)
+ 
+    def activate_management_node(self, nic, vip, dbtype, path, hostname, mask):
+        """activate management node"""
+        global setup_process_msg
+        setup_process_msg="Activate stage"
+        self.log_info(setup_process_msg)
+        self.execute_command("chkconfig --level 345 xcatd off")
+        self.execute_command("chkconfig --level 2345 conserver off")
+        self.execute_command("chkconfig --level 2345 dhcpd off")
+        self.execute_command("chkconfig postgresql off")
+        self.execute_command("service conserver start")
+        self.execute_command("service dhcpd start")
+        self.execute_command("service named start")
+        self.execute_command("service xcatd start")
+        start_db="service "+dbtype+" start"
+        self.execute_command(start_db)
+        self.execute_command("service ntpd restart")
+        self.change_hostname(host_name,args.vip)
+        self.configure_shared_data(args.path, shared_fs)
+        self.configure_vip(vip, nic)
+ 
+    def xcatha_setup_mn(self, args):
+        """setup_mn process"""
+>>>>>>> upstream/master
         try:
             self.vip_check(args.virtual_ip)
             if self.check_xcat_exist_in_shared_data(args.path):
@@ -447,27 +505,44 @@ class xcat_ha_utils:
         except:
             raise HaException("Error: "+setup_process_msg+" [Failed]")
 
+<<<<<<< HEAD
 def parser_arguments():
     """parser input arguments"""
+=======
+def parse_arguments():
+    """parse input arguments"""
+>>>>>>> upstream/master
     parser = argparse.ArgumentParser(description="setup and configure shared data based xCAT HA MN node")
     parser.add_argument('-p', dest="path", required=True, help="shared data directory path")
     parser.add_argument('-v', dest="virtual_ip", required=True, help="virtual IP")
     parser.add_argument('-i', dest="nic", required=True, help="virtual IP network interface")
     parser.add_argument('-n', dest="host_name", required=True, help="virtual IP hostname")
     parser.add_argument('-m', dest="netmask", default="255.255.255.0", help="virtual IP network mask")
+<<<<<<< HEAD
     parser.add_argument('-t', dest="dbtype", default="sqlite", help="database type")
+=======
+    parser.add_argument('-t', dest="dbtype", default="sqlite", choices=['postgresql', 'sqlite'], help="database type")
+>>>>>>> upstream/master
     args = parser.parse_args()
     return args
 
 def main():
+<<<<<<< HEAD
     args=parser_arguments()
+=======
+    args=parse_arguments()
+>>>>>>> upstream/master
     obj=xcat_ha_utils()
     try:
         obj.xcatha_setup_mn(args)
     except HaException,e:
         error_msg="=================="+e.message+"=================================="
         print error_msg        
+<<<<<<< HEAD
         print "Error happen, start to clean up environment"
+=======
+        print "Error encountered, starting to clean up the environment"
+>>>>>>> upstream/master
         obj.clean_env(args.virtual_ip, args.nic, args.host_name)
 
 if __name__ == "__main__":
