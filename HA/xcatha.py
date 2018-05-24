@@ -7,7 +7,7 @@
 #   
 #  NAME:  xcatha.py
 #
-#  SYNTAX: xcatha.py -p <shared-data directory path> -i <nic> -v <virtual ip> -n <virtual ip hostname> [-m <netmask>] [-t <database type>] 
+#  SYNTAX: xcatha.py -s|--setup -p <shared-data directory path> -i <nic> -v <virtual ip> -n <virtual ip hostname> [-m <netmask>] [-t <database type>] 
 #
 #  SYNTAX: xcatha.py -a|--activate -p <shared-data directory path> -i <nic> -v <virtual ip> [-m <netmask>] [-t <database type>]
 #
@@ -51,13 +51,15 @@ logger.addHandler(console_handler)
 
 
 class HaException(Exception):
+    """customize exception"""
     def __init__(self,message):
         Exception.__init__(self)
         self.message=message
 
 class xcat_ha_utils:
-
+    """"""
     def log_info(self, message):
+        """print format"""
         print "============================================================================================"
         logger.info(message)
 
